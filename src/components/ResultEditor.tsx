@@ -150,10 +150,14 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
   const handleDownload = async (formatToExport: TargetFormat = activeFormat) => {
     setIsExporting(true);
     try {
-      const { blob, filename } = await getBlobForFormat(formatToExport);
-      downloadBlob(blob, filename);
+      const { blob, filename, mimeType } = await getBlobForFormat(formatToExport);
+      const res = await downloadBlob(blob, filename, mimeType);
       onSaveToHistory?.(formatToExport);
-      showToast(`Berhasil mengunduh ${filename}`);
+      if (res.method === 'sharesheet') {
+        showToast(`Menu simpan / buka file ${filename} dibuka`);
+      } else {
+        showToast(`Berhasil mengunduh ${filename}`);
+      }
     } catch (err: any) {
       console.error(err);
       alert('Gagal membuat file: ' + (err?.message || 'Error tidak diketahui'));

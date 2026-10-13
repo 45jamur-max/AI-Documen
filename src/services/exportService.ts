@@ -508,39 +508,76 @@ export function generatePdfBlob(doc: ExtractedDocument, options: PdfOptions = { 
 }
 
 // ==================== DOWNLOAD & SHARESHEET UTILITIES ====================
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+export async function downloadBlob(
+  blob: Blob,
+  filename: string,
+  mimeType?: string
+): Promise<{ success: boolean; method: 'sharesheet' | 'download' }> {
+  const actualMimeType = mimeType || blob.type || 'application/octet-stream';
+  const isMobile =
+    typeof navigator !== 'undefined' &&
+    /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent || '');
 
-export async function shareFileOrDownload(blob: Blob, filename: string, mimeType: string): Promise<{ shared: boolean; method: 'sharesheet' | 'download' }> {
-  try {
-    const file = new File([blob], filename, { type: mimeType });
-
-    // Check if Android Sharesheet (Web Share API) supports files
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        title: filename,
-        text: `Dokumen "${filename}" hasil konversi AI Converter`,
-        files: [file],
-      });
-      return { shared: true, method: 'sharesheet' };
+  // In Android PWA (standalone home screen app), opening blob: URLs via <a> tag
+  // causes the WebView to navigate to the blob URL, which renders a blank page
+  // because mobile browsers cannot preview raw .xlsx or .docx files inline.
+  // Using Web Share API hands the file directly to Android OS (Files, Excel, Drive).
+  if (isMobile && typeof navigator.share === 'function') {
+    try {
+      const file = new File([blob], filename, { type: actualMimeType });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: filename,
+          text: `Simpan atau buka dokumen ${filename}`,
+          files: [file],
+        });
+        return { success: true, method: 'sharesheet' };
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // User cancelled or closed the Android share picker
+        return { success: false, method: 'sharesheet' };
+      }
+      console.warn('Native mobile share failed, trying direct download fallback:', err);
     }
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      // User cancelled the sharesheet picker dialog
-      return { shared: false, method: 'sharesheet' };
-    }
-    console.warn('Sharesheet not supported or failed, falling back to direct download:', err);
   }
 
-  // Fallback to direct download
-  downloadBlob(blob, filename);
-  return { shared: true, method: 'download' };
+  // Desktop or fallback: robust link download without blank page navigation
+  try {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.style.display = 'none';
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.target = '_self';
+    anchor.rel = 'noopener noreferrer';
+    document.body.appendChild(anchor);
+    anchor.click();
+
+    // Keep ObjectURL alive for 60 seconds on mobile so Android Download Manager has time to stream it
+    setTimeout(() => {
+      try {
+        if (anchor.parentNode) {
+          anchor.parentNode.removeChild(anchor);
+        }
+        URL.revokeObjectURL(url);
+      } catch {
+        // Ignore
+      }
+    }, 60000);
+
+    return { success: true, method: 'download' };
+  } catch (downloadErr) {
+    console.error('Download error:', downloadErr);
+    throw downloadErr;
+  }
+}
+
+export async function shareFileOrDownload(
+  blob: Blob,
+  filename: string,
+  mimeType: string
+): Promise<{ shared: boolean; method: 'sharesheet' | 'download' }> {
+  const res = await downloadBlob(blob, filename, mimeType);
+  return { shared: res.success, method: res.method };
 }
