@@ -542,29 +542,50 @@ export async function downloadBlob(
     }
   }
 
-  // Desktop or fallback: robust link download without blank page navigation
+  // Desktop or fallback: use form attachment submission to /api/download
+  // This triggers native OS download manager without opening about:blank
   try {
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.style.display = 'none';
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.target = '_self';
-    anchor.rel = 'noopener noreferrer';
-    document.body.appendChild(anchor);
-    anchor.click();
-
-    // Keep ObjectURL alive for 60 seconds on mobile so Android Download Manager has time to stream it
-    setTimeout(() => {
+    const reader = new FileReader();
+    reader.onload = () => {
       try {
-        if (anchor.parentNode) {
-          anchor.parentNode.removeChild(anchor);
-        }
-        URL.revokeObjectURL(url);
-      } catch {
-        // Ignore
+        const dataUrl = (reader.result as string) || '';
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/download';
+        form.style.display = 'none';
+
+        const inputData = document.createElement('input');
+        inputData.type = 'hidden';
+        inputData.name = 'fileBase64';
+        inputData.value = dataUrl;
+        form.appendChild(inputData);
+
+        const inputFilename = document.createElement('input');
+        inputFilename.type = 'hidden';
+        inputFilename.name = 'filename';
+        inputFilename.value = filename;
+        form.appendChild(inputFilename);
+
+        const inputMime = document.createElement('input');
+        inputMime.type = 'hidden';
+        inputMime.name = 'mimeType';
+        inputMime.value = actualMimeType;
+        form.appendChild(inputMime);
+
+        document.body.appendChild(form);
+        form.submit();
+        setTimeout(() => {
+          try {
+            if (form.parentNode) {
+              form.parentNode.removeChild(form);
+            }
+          } catch {}
+        }, 4000);
+      } catch (err) {
+        console.warn('Form download fallback failed:', err);
       }
-    }, 60000);
+    };
+    reader.readAsDataURL(blob);
 
     return { success: true, method: 'download' };
   } catch (downloadErr) {

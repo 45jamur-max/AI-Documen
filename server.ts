@@ -29,6 +29,34 @@ app.get(['/api/health', '/health'], (_req, res) => {
   });
 });
 
+// Attachment download endpoint (Prevents about:blank on mobile Android)
+app.post(['/api/download', '/download'], (req, res) => {
+  try {
+    const { fileBase64, filename = 'dokumen.xlsx', mimeType = 'application/octet-stream' } = req.body || {};
+    if (!fileBase64) {
+      return res.status(400).send('Data file tidak ditemukan.');
+    }
+
+    let rawBase64 = fileBase64;
+    if (rawBase64.includes('base64,')) {
+      rawBase64 = rawBase64.split('base64,')[1];
+    }
+
+    const buffer = Buffer.from(rawBase64, 'base64');
+    const safeFilename = encodeURIComponent(filename).replace(/['()]/g, escape);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${safeFilename}`);
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    return res.status(200).end(buffer);
+  } catch (err: any) {
+    console.error('Download error:', err);
+    return res.status(500).send('Gagal mengunduh file: ' + (err?.message || 'Error'));
+  }
+});
+
 // Server-side OCR & Document extraction using Gemini
 app.post(['/api/convert-ocr', '/convert-ocr'], async (req, res) => {
   try {
