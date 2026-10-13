@@ -1,0 +1,6 @@
+{
+  "name": "AI Converter — Gambar ke Excel, Word & PDF",
+  "description": "Aplikasi konversi gambar, screenshot, dan hasil scan dokumen ke format Excel (.xlsx), Word (.docx), dan PDF siap edit menggunakan teknologi AI Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
