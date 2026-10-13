@@ -26,47 +26,102 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const processFiles = (fileList: FileList | null) => {
+  // Compress and resize image to fit comfortably under server limits (< 500KB per image)
+  const compressAndResizeImage = (file: File): Promise<{ dataUrl: string; size: number }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rawUrl = e.target?.result as string;
+        if (!rawUrl) {
+          resolve({ dataUrl: '', size: 0 });
+          return;
+        }
+
+        const img = new Image();
+        img.onload = () => {
+          const maxDimension = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            resolve({ dataUrl: rawUrl, size: file.size });
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const approxSize = Math.round((compressedDataUrl.length * 3) / 4);
+          resolve({ dataUrl: compressedDataUrl, size: approxSize });
+        };
+
+        img.onerror = () => {
+          resolve({ dataUrl: rawUrl, size: file.size });
+        };
+
+        img.src = rawUrl;
+      };
+
+      reader.onerror = () => {
+        resolve({ dataUrl: '', size: 0 });
+      };
+
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const processFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
 
     const newItems: ImageItem[] = [];
-    const maxAllowedSize = 20 * 1024 * 1024; // 20MB max per image
+    const maxAllowedSize = 25 * 1024 * 1024; // 25MB max raw file
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
 
       // Format check
       if (!file.type.startsWith('image/')) {
-        alert(`File "${file.name}" bukan format gambar yang valid. Silakan unggah file JPG, PNG, WEBP, atau HEIC.`);
+        alert(`File "${file.name}" bukan format gambar yang didukung. Silakan gunakan format JPG, PNG, atau WEBP.`);
         continue;
       }
 
-      // Size check
+      // Raw size check
       if (file.size > maxAllowedSize) {
-        alert(`Ukuran file "${file.name}" terlalu besar (${formatSize(file.size)}). Batas maksimal per gambar adalah 20MB.`);
+        alert(`Ukuran file "${file.name}" terlalu besar (${formatSize(file.size)}).`);
         continue;
       }
 
-      const reader = new FileReader();
       const id = 'img_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const { dataUrl, size } = await compressAndResizeImage(file);
 
-      reader.onload = (e) => {
-        const resultUrl = e.target?.result as string;
-        if (resultUrl) {
-          const item: ImageItem = {
-            id,
-            name: file.name,
-            size: file.size,
-            mimeType: file.type || 'image/jpeg',
-            dataUrl: resultUrl,
-            previewUrl: resultUrl,
-          };
+      if (dataUrl) {
+        newItems.push({
+          id,
+          name: file.name,
+          size,
+          mimeType: 'image/jpeg',
+          dataUrl,
+          previewUrl: dataUrl,
+        });
+      }
+    }
 
-          onImagesChange([...images, ...newItems, item].slice(0, maxFiles));
-        }
-      };
-
-      reader.readAsDataURL(file);
+    if (newItems.length > 0) {
+      onImagesChange([...images, ...newItems].slice(0, maxFiles));
     }
   };
 
