@@ -21,7 +21,7 @@ app.use(express.json({ limit: '60mb' }));
 app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 
 // Health check endpoint
-app.get('/api/health', (_req, res) => {
+app.get(['/api/health', '/health'], (_req, res) => {
   res.json({
     status: 'ok',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
@@ -29,8 +29,8 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-// Server-side OCR & Document extraction using Gemini 3.8 Flash
-app.post('/api/convert-ocr', async (req, res) => {
+// Server-side OCR & Document extraction using Gemini
+app.post(['/api/convert-ocr', '/convert-ocr'], async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -269,7 +269,7 @@ Format skema respon JSON:
 });
 
 // Endpoint Chat AI untuk memodifikasi dokumen secara interaktif
-app.post('/api/chat-modify-document', async (req, res) => {
+app.post(['/api/chat-modify-document', '/chat-modify-document'], async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -448,4 +448,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// In local dev or Docker / Cloud Run, start the server.
+// In Vercel serverless environment, Vercel invokes the exported app.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
