@@ -17,111 +17,189 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ExtractedDocument, PdfOptions } from '../types';
 
-// ==================== EXCEL (.XLSX) EXPORT ====================
+// ==================== EXCEL (.XLSX) EXPORT - 1 SHEET SAJA & SIAP PRINT ====================
 export function generateExcelBlob(doc: ExtractedDocument): Blob {
   const wb = XLSX.utils.book_new();
+  const allRows: Array<Array<any>> = [];
 
-  // If there are key-values, create an "Info Dokumen" summary sheet first
-  if (doc.keyValues && doc.keyValues.length > 0) {
-    const summaryData: Array<Array<string>> = [
-      ['DOKUMEN', doc.documentTitle || 'Hasil Konversi AI'],
-      ['TANGGAL KONVERSI', new Date().toLocaleDateString('id-ID')],
-      ['RINGKASAN', doc.summary || '-'],
-      [''],
-      ['PARAMETER / FIELD', 'NILAI / KETERANGAN'],
-    ];
-
-    doc.keyValues.forEach((kv) => {
-      summaryData.push([kv.key, kv.value]);
+  // Hitung jumlah kolom maksimum yang dibutuhkan seluruh dokumen
+  let maxCols = 2;
+  if (doc.tables && doc.tables.length > 0) {
+    doc.tables.forEach((t) => {
+      maxCols = Math.max(maxCols, t.headers?.length || 2);
     });
-
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 25 }, { wch: 45 }];
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Dokumen');
   }
 
-  // Create sheets for tables
-  if (doc.tables && doc.tables.length > 0) {
-    doc.tables.forEach((table, index) => {
-      const sheetName = (table.title ? table.title.replace(/[:\\/?*\[\]]/g, '') : `Tabel ${index + 1}`).substring(0, 31);
-      
-      const sheetRows: Array<Array<any>> = [];
+  // 1. JUDUL DOKUMEN & KOP ATAS (Baris 1 - 2)
+  const docTitle = (doc.documentTitle || 'DOKUMEN HASIL KONVERSI').toUpperCase();
+  allRows.push([docTitle]);
+  allRows.push([
+    `Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })} | Kategori: ${(doc.documentType || 'Dokumen').toUpperCase()}`,
+  ]);
+  allRows.push([]); // Baris kosong pemisah
 
+  // 2. BLOK INFORMASI / PARAMETER (Key-Values diletakkan di sheet yang sama)
+  if (doc.keyValues && doc.keyValues.length > 0) {
+    allRows.push(['INFORMASI DOKUMEN / FAKTUR:']);
+    // Susun key-values secara rapi (2 pasang per baris jika kolom mencukupi)
+    if (maxCols >= 4 && doc.keyValues.length > 1) {
+      for (let i = 0; i < doc.keyValues.length; i += 2) {
+        const kv1 = doc.keyValues[i];
+        const kv2 = doc.keyValues[i + 1];
+        const rowData = [kv1.key + ':', kv1.value];
+        if (kv2) {
+          rowData.push(kv2.key + ':');
+          rowData.push(kv2.value);
+        }
+        allRows.push(rowData);
+      }
+    } else {
+      doc.keyValues.forEach((kv) => {
+        allRows.push([kv.key + ':', kv.value]);
+      });
+    }
+    allRows.push([]); // Baris kosong pemisah
+  }
+
+  // 3. TABEL DATA UTAMA & TABEL LAINNYA (Semua di 1 Sheet)
+  if (doc.tables && doc.tables.length > 0) {
+    doc.tables.forEach((table, tableIdx) => {
+      // Judul Tabel jika ada lebih dari 1 tabel
       if (table.title) {
-        sheetRows.push([table.title]);
-        sheetRows.push(['']);
+        allRows.push([table.title.toUpperCase()]);
+      } else if (doc.tables.length > 1) {
+        allRows.push([`TABEL RINCIAN #${tableIdx + 1}`]);
       }
 
-      // Headers
-      sheetRows.push(table.headers);
+      // Baris Header Tabel
+      const headers = table.headers.map((h) => (h || '').trim());
+      allRows.push(headers);
 
-      // Data Rows with careful data types
+      // Baris Data dengan konversi angka dan teks yang cermat
       table.rows.forEach((row) => {
         const formattedRow = row.map((cell) => {
           if (!cell) return '';
-          const trimmed = cell.trim();
-          // If cell starts with '0' and is longer than 1 digit (e.g. phone or code '081234'), keep as text!
+          const trimmed = String(cell).trim();
+          // Jika diawali angka '0' dan lebih dari 1 digit (cth: nomor telepon atau kode barcode), simpan sebagai teks
           if (trimmed.length > 1 && trimmed.startsWith('0') && /^\d+$/.test(trimmed)) {
             return trimmed;
           }
-          // If clean number without currency
-          const numCandidate = trimmed.replace(/\./g, '').replace(/,/g, '.');
-          if (/^-?\d+(\.\d+)?$/.test(numCandidate) && !trimmed.startsWith('0')) {
-            const parsed = parseFloat(numCandidate);
+          // Konversi angka murni atau mata uang ke tipe number Excel agar siap dihitung
+          const cleanNum = trimmed.replace(/\./g, '').replace(/,/g, '.');
+          if (/^-?\d+(\.\d+)?$/.test(cleanNum) && !trimmed.startsWith('0')) {
+            const parsed = parseFloat(cleanNum);
             if (!isNaN(parsed)) return parsed;
           }
           return cell;
         });
-        sheetRows.push(formattedRow);
+        allRows.push(formattedRow);
       });
 
-      // Subtotals & Total if present
+      // Subtotals (Subtotal, Diskon, PPN, dll)
       if (table.subtotals && table.subtotals.length > 0) {
         table.subtotals.forEach((sub) => {
-          const subRow = new Array(Math.max(table.headers.length, 2)).fill('');
-          subRow[table.headers.length - 2] = sub.label;
-          subRow[table.headers.length - 1] = sub.value;
-          sheetRows.push(subRow);
-        });
-      }
-
-      if (table.total) {
-        const totRow = new Array(Math.max(table.headers.length, 2)).fill('');
-        totRow[table.headers.length - 2] = 'TOTAL';
-        totRow[table.headers.length - 1] = table.total;
-        sheetRows.push(totRow);
-      }
-
-      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
-
-      // Auto-fit column widths
-      const colWidths = table.headers.map((h, colIdx) => {
-        let maxLen = (h || '').length;
-        table.rows.forEach((r) => {
-          if (r[colIdx]) {
-            maxLen = Math.max(maxLen, String(r[colIdx]).length);
+          const subRow = new Array(Math.max(headers.length, 2)).fill('');
+          subRow[headers.length - 2] = sub.label;
+          const valClean = String(sub.value).trim().replace(/\./g, '').replace(/,/g, '.');
+          if (/^-?\d+(\.\d+)?$/.test(valClean)) {
+            subRow[headers.length - 1] = parseFloat(valClean);
+          } else {
+            subRow[headers.length - 1] = sub.value;
           }
+          allRows.push(subRow);
         });
-        return { wch: Math.min(Math.max(maxLen + 4, 12), 40) };
-      });
-      ws['!cols'] = colWidths;
+      }
 
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      // Baris Total Akhir
+      if (table.total) {
+        const totRow = new Array(Math.max(headers.length, 2)).fill('');
+        totRow[headers.length - 2] = 'TOTAL';
+        const totClean = String(table.total).trim().replace(/\./g, '').replace(/,/g, '.');
+        if (/^-?\d+(\.\d+)?$/.test(totClean)) {
+          totRow[headers.length - 1] = parseFloat(totClean);
+        } else {
+          totRow[headers.length - 1] = table.total;
+        }
+        allRows.push(totRow);
+      }
+
+      allRows.push([]); // Baris kosong pemisah antar tabel
     });
   } else {
-    // If no tables, write paragraphs as a sheet
-    const textRows: Array<Array<string>> = [
-      ['Judul', doc.documentTitle],
-      [''],
-      ['Konten Dokumen', ''],
-    ];
-    doc.paragraphs.forEach((p) => {
-      textRows.push([p.type.toUpperCase(), p.content]);
-    });
-    const wsText = XLSX.utils.aoa_to_sheet(textRows);
-    wsText['!cols'] = [{ wch: 18 }, { wch: 60 }];
-    XLSX.utils.book_append_sheet(wb, wsText, 'Teks Dokumen');
+    // Jika tidak ada tabel, tulis isi teks/paragraf
+    if (doc.paragraphs && doc.paragraphs.length > 0) {
+      allRows.push(['ISI DOKUMEN:']);
+      doc.paragraphs.forEach((p) => {
+        allRows.push([p.content]);
+      });
+      allRows.push([]);
+    }
   }
+
+  // 4. CATATAN & RINGKASAN
+  if (doc.summary) {
+    allRows.push(['CATATAN / RINGKASAN:']);
+    allRows.push([doc.summary]);
+    allRows.push([]);
+  }
+
+  // 5. BAGIAN TANDA TANGAN RESMI (SIAP PRINT A4)
+  allRows.push([]);
+  const sign1 = new Array(maxCols).fill('');
+  const sign2 = new Array(maxCols).fill('');
+  const sign3 = new Array(maxCols).fill('');
+  const sign4 = new Array(maxCols).fill('');
+
+  const leftCol = 0;
+  const rightCol = Math.max(maxCols - 1, 1);
+
+  sign1[leftCol] = 'Diterima Oleh,';
+  sign1[rightCol] = 'Hormat Kami,';
+
+  sign4[leftCol] = '( _____________________ )';
+  sign4[rightCol] = '( _____________________ )';
+
+  allRows.push(sign1);
+  allRows.push(sign2);
+  allRows.push(sign3);
+  allRows.push(sign4);
+
+  // Buat 1 Sheet Tunggal
+  const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+  // Hitung lebar kolom otomatis agar pas dan tidak terpotong saat dicetak
+  const colWidths: Array<{ wch: number }> = [];
+  for (let c = 0; c < maxCols; c++) {
+    let maxLen = 12;
+    allRows.forEach((row) => {
+      if (row[c] !== undefined && row[c] !== null) {
+        const valStr = String(row[c]);
+        // Jangan biarkan judul panjang mempengaruhi lebar satu kolom
+        if (row.length > 1 || valStr.length < 40) {
+          maxLen = Math.max(maxLen, valStr.length);
+        }
+      }
+    });
+    // Batas lebar nyaman untuk cetak kertas A4 (min 12, max 35 karakter)
+    colWidths.push({ wch: Math.min(Math.max(maxLen + 3, 12), 35) });
+  }
+  ws['!cols'] = colWidths;
+
+  // Konfigurasi Siap Cetak (A4, margin 0.5 inci, fit 1 halaman lebar)
+  ws['!margins'] = { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
+  ws['!pageSetup'] = {
+    paperSize: 9, // Kertas A4
+    orientation: maxCols > 6 ? 'landscape' : 'portrait',
+    fitToWidth: 1,
+    fitToHeight: 0,
+  };
+
+  // Masukkan HANYA 1 SHEET tunggal ke dalam workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Dokumen');
 
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([wbout], {
@@ -508,97 +586,128 @@ export function generatePdfBlob(doc: ExtractedDocument, options: PdfOptions = { 
 }
 
 // ==================== DOWNLOAD & SHARESHEET UTILITIES ====================
+// Fungsi unduh langsung (TIDAK membuka menu share / bagikan, langsung simpan file)
 export async function downloadBlob(
   blob: Blob,
   filename: string,
   mimeType?: string
-): Promise<{ success: boolean; method: 'sharesheet' | 'download' }> {
+): Promise<{ success: boolean; method: 'download' }> {
   const actualMimeType = mimeType || blob.type || 'application/octet-stream';
-  const isMobile =
-    typeof navigator !== 'undefined' &&
-    /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent || '');
 
-  // In Android PWA (standalone home screen app), opening blob: URLs via <a> tag
-  // causes the WebView to navigate to the blob URL, which renders a blank page
-  // because mobile browsers cannot preview raw .xlsx or .docx files inline.
-  // Using Web Share API hands the file directly to Android OS (Files, Excel, Drive).
-  if (isMobile && typeof navigator.share === 'function') {
-    try {
-      const file = new File([blob], filename, { type: actualMimeType });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: filename,
-          text: `Simpan atau buka dokumen ${filename}`,
-          files: [file],
-        });
-        return { success: true, method: 'sharesheet' };
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // User cancelled or closed the Android share picker
-        return { success: false, method: 'sharesheet' };
-      }
-      console.warn('Native mobile share failed, trying direct download fallback:', err);
-    }
-  }
-
-  // Desktop or fallback: use form attachment submission to /api/download
-  // This triggers native OS download manager without opening about:blank
+  // 1. Coba unduh via endpoint streaming attachment server (/api/download)
+  // Metode ini langsung ditangkap oleh Download Manager Android ke folder Download tanpa about:blank
   try {
     const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const dataUrl = (reader.result as string) || '';
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/api/download';
-        form.style.display = 'none';
+    const downloadPromise = new Promise<{ success: boolean; method: 'download' }>((resolve) => {
+      reader.onload = () => {
+        try {
+          const dataUrl = (reader.result as string) || '';
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = '/api/download';
+          form.style.display = 'none';
 
-        const inputData = document.createElement('input');
-        inputData.type = 'hidden';
-        inputData.name = 'fileBase64';
-        inputData.value = dataUrl;
-        form.appendChild(inputData);
+          const inputData = document.createElement('input');
+          inputData.type = 'hidden';
+          inputData.name = 'fileBase64';
+          inputData.value = dataUrl;
+          form.appendChild(inputData);
 
-        const inputFilename = document.createElement('input');
-        inputFilename.type = 'hidden';
-        inputFilename.name = 'filename';
-        inputFilename.value = filename;
-        form.appendChild(inputFilename);
+          const inputFilename = document.createElement('input');
+          inputFilename.type = 'hidden';
+          inputFilename.name = 'filename';
+          inputFilename.value = filename;
+          form.appendChild(inputFilename);
 
-        const inputMime = document.createElement('input');
-        inputMime.type = 'hidden';
-        inputMime.name = 'mimeType';
-        inputMime.value = actualMimeType;
-        form.appendChild(inputMime);
+          const inputMime = document.createElement('input');
+          inputMime.type = 'hidden';
+          inputMime.name = 'mimeType';
+          inputMime.value = actualMimeType;
+          form.appendChild(inputMime);
 
-        document.body.appendChild(form);
-        form.submit();
-        setTimeout(() => {
-          try {
-            if (form.parentNode) {
-              form.parentNode.removeChild(form);
-            }
-          } catch {}
-        }, 4000);
-      } catch (err) {
-        console.warn('Form download fallback failed:', err);
-      }
-    };
-    reader.readAsDataURL(blob);
+          document.body.appendChild(form);
+          form.submit();
+          setTimeout(() => {
+            try {
+              if (form.parentNode) {
+                form.parentNode.removeChild(form);
+              }
+            } catch {}
+            resolve({ success: true, method: 'download' });
+          }, 1500);
+        } catch {
+          // Fallback ke anchor
+          triggerAnchorDownload(blob, filename);
+          resolve({ success: true, method: 'download' });
+        }
+      };
 
+      reader.onerror = () => {
+        triggerAnchorDownload(blob, filename);
+        resolve({ success: true, method: 'download' });
+      };
+
+      reader.readAsDataURL(blob);
+    });
+
+    return await downloadPromise;
+  } catch (err) {
+    console.warn('Form attachment download error, falling back to anchor:', err);
+    triggerAnchorDownload(blob, filename);
     return { success: true, method: 'download' };
-  } catch (downloadErr) {
-    console.error('Download error:', downloadErr);
-    throw downloadErr;
   }
 }
 
+// Helper anchor download
+function triggerAnchorDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.style.display = 'none';
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.target = '_self';
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+
+  setTimeout(() => {
+    try {
+      if (anchor.parentNode) {
+        anchor.parentNode.removeChild(anchor);
+      }
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 45000);
+}
+
+// Fungsi khusus tombol "Bagikan File" (membuka menu share Android / WhatsApp / Drive)
 export async function shareFileOrDownload(
   blob: Blob,
   filename: string,
   mimeType: string
 ): Promise<{ shared: boolean; method: 'sharesheet' | 'download' }> {
-  const res = await downloadBlob(blob, filename, mimeType);
-  return { shared: res.success, method: res.method };
+  const actualMimeType = mimeType || blob.type || 'application/octet-stream';
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      const file = new File([blob], filename, { type: actualMimeType });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: filename,
+          text: `Dokumen ${filename} dari AI Converter`,
+          files: [file],
+        });
+        return { shared: true, method: 'sharesheet' };
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return { shared: false, method: 'sharesheet' };
+      }
+      console.warn('Share picker failed, falling back to download:', err);
+    }
+  }
+
+  // Fallback ke unduh langsung jika device tidak support Web Share API
+  const res = await downloadBlob(blob, filename, actualMimeType);
+  return { shared: res.success, method: 'download' };
 }

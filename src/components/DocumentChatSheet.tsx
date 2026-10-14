@@ -272,6 +272,28 @@ export const DocumentChatSheet: React.FC<DocumentChatSheetProps> = ({
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Live Synchronized Status Bar */}
+        <div className="px-3.5 py-2 bg-emerald-50/90 dark:bg-emerald-950/50 border-t border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-[11px] text-emerald-800 dark:text-emerald-300 shrink-0">
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span className="font-bold truncate">
+              {currentDocument.documentTitle || 'Dokumen'}
+            </span>
+            <span className="text-emerald-700 dark:text-emerald-400 shrink-0 font-medium">
+              ({currentDocument.tables?.[0]?.rows?.length || 0} baris
+              {currentDocument.tables?.[0]?.total ? ` • Total: ${currentDocument.tables[0].total}` : ''})
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 active:scale-95 transition shadow-xs"
+            title="Tutup chat dan periksa tabel langsung"
+          >
+            Lihat Tabel ↗
+          </button>
+        </div>
+
         {/* Input Bar */}
         <div className="p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0">
           <form

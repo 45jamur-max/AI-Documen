@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileSpreadsheet,
   FileText,
@@ -37,6 +37,11 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Synchronize state whenever a new document is loaded
+  useEffect(() => {
+    setDoc(initialDoc);
+  }, [initialDoc]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -146,18 +151,14 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
     }
   };
 
-  // Export & Download
+  // Export & Download Langsung (Direct Download ke Penyimpanan Perangkat)
   const handleDownload = async (formatToExport: TargetFormat = activeFormat) => {
     setIsExporting(true);
     try {
       const { blob, filename, mimeType } = await getBlobForFormat(formatToExport);
-      const res = await downloadBlob(blob, filename, mimeType);
+      await downloadBlob(blob, filename, mimeType);
       onSaveToHistory?.(formatToExport);
-      if (res.method === 'sharesheet') {
-        showToast(`Menu simpan / buka file ${filename} dibuka`);
-      } else {
-        showToast(`Berhasil mengunduh ${filename}`);
-      }
+      showToast(`Mengunduh ${filename} langsung ke perangkat...`);
     } catch (err: any) {
       console.error(err);
       alert('Gagal membuat file: ' + (err?.message || 'Error tidak diketahui'));
