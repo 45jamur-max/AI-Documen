@@ -45,30 +45,43 @@ export async function processImagesWithAI(options: ConvertOptions): Promise<Extr
     if (!response.ok) {
       let errorMsg = 'Gagal memproses dokumen.';
       try {
-        const errorData = await response.json();
-        if (errorData?.error) {
-          const rawErr = errorData.error;
-          if (typeof rawErr === 'string') {
-            try {
-              const nested = JSON.parse(rawErr);
-              if (nested?.error?.message) {
-                errorMsg = nested.error.message;
-              } else {
+        const errorText = await response.text();
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData?.error) {
+            const rawErr = errorData.error;
+            if (typeof rawErr === 'string') {
+              try {
+                const nested = JSON.parse(rawErr);
+                errorMsg = nested?.error?.message || rawErr;
+              } catch {
                 errorMsg = rawErr;
               }
-            } catch {
-              errorMsg = rawErr;
+            } else if (rawErr?.message) {
+              errorMsg = rawErr.message;
             }
-          } else if (rawErr?.message) {
-            errorMsg = rawErr.message;
+          }
+        } catch {
+          if (errorText && errorText.length < 200 && !errorText.includes('<html')) {
+            errorMsg = errorText;
+          } else if (response.status === 500) {
+            errorMsg = 'Server Vercel mengalami kesalahan (Status 500). Jika baru saja menambahkan GEMINI_API_KEY di Vercel, Anda wajib melakukan "Redeploy" di dashboard Vercel agar kunci API tersebut aktif.';
+          } else if (response.status === 413) {
+            errorMsg = 'Ukuran gambar terlalu besar untuk diproses server Vercel (Maksimal 4.5MB). Silakan gunakan 1 foto dokumen sekaligus.';
+          } else if (response.status === 504) {
+            errorMsg = 'Waktu respon server habis (Timeout 504). Silakan coba tekan tombol "Konversi dengan AI" sekali lagi.';
+          } else {
+            errorMsg = `Server mengembalikan status ${response.status} (${response.statusText || 'Error'})`;
           }
         }
       } catch {
-        errorMsg = `Server mengembalikan status ${response.status} (${response.statusText})`;
+        errorMsg = `Server mengembalikan status ${response.status} (${response.statusText || 'Error'})`;
       }
 
       if (errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE')) {
         errorMsg = 'Layanan AI sedang mengalami lonjakan antrean sementara. Silakan ketuk tombol coba lagi.';
+      } else if (errorMsg.includes('GEMINI_API_KEY')) {
+        errorMsg = 'Kunci API Gemini belum aktif di server. Di dashboard Vercel, masuk ke Deployments > klik tombol titik tiga (...) > pilih "Redeploy" agar Environment Variables diterapkan.';
       }
 
       throw new Error(errorMsg);
@@ -146,5 +159,43 @@ export async function modifyDocumentWithChat(
     assistantReply: result.assistantReply,
     updatedDocument: result.updatedDocument,
     changes: result.changes || [],
+  };
+}
+
+// Terjemahan Dokumen Multibahasa Otomatis
+export async function translateDocumentWithAI(
+  currentDocument: ExtractedDocument,
+  targetLanguage: string
+): Promise<{ translatedDocument: ExtractedDocument; targetLanguageName: string }> {
+  const response = await fetch('/api/translate-document', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      currentDocument,
+      targetLanguage,
+    }),
+  });
+
+  if (!response.ok) {
+    let errorMsg = 'Gagal menerjemahkan dokumen.';
+    try {
+      const err = await response.json();
+      if (err?.error) errorMsg = err.error;
+    } catch {
+      errorMsg = `Server mengembalikan status ${response.status}`;
+    }
+    throw new Error(errorMsg);
+  }
+
+  const result = await response.json();
+  if (!result.success || !result.translatedDocument) {
+    throw new Error(result.error || 'Respon terjemahan dari AI tidak valid.');
+  }
+
+  return {
+    translatedDocument: result.translatedDocument,
+    targetLanguageName: result.targetLanguage || targetLanguage,
   };
 }

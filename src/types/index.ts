@@ -37,6 +37,13 @@ export interface UncertaintyItem {
   issue: string;
 }
 
+export interface QrBarcodeItem {
+  type: 'qr_code' | 'barcode' | 'e_faktur' | 'resi' | 'other';
+  rawText: string;
+  label?: string;
+  isUrl?: boolean;
+}
+
 export interface ExtractedDocument {
   documentTitle: string;
   documentType: 'table' | 'receipt' | 'document' | 'invoice' | 'mixed';
@@ -47,6 +54,7 @@ export interface ExtractedDocument {
   keyValues: KeyValueItem[];
   paragraphs: ParagraphItem[];
   uncertainties: UncertaintyItem[];
+  qrBarcodes?: QrBarcodeItem[];
 }
 
 export interface ConversionHistoryItem {

@@ -89,6 +89,14 @@ export function generateExcelBlob(doc: ExtractedDocument): Blob {
         allRows.push([kv.key + ':', kv.value]);
       });
     }
+
+    // Masukkan info QR Code / Barcode (misal e-Faktur Pajak atau No. Resi)
+    if (doc.qrBarcodes && doc.qrBarcodes.length > 0) {
+      doc.qrBarcodes.forEach((qb) => {
+        allRows.push([`${(qb.label || 'QR / BARCODE').toUpperCase()}:`, qb.rawText]);
+      });
+    }
+
     allRows.push([]); // Baris kosong pemisah
   }
 

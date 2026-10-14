@@ -82,7 +82,15 @@ export const DocumentChatSheet: React.FC<DocumentChatSheetProps> = ({
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert('Perangkat / browser ini belum mendukung input suara web. Silakan gunakan keyboard suara bawaan ponsel Anda.');
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: 'voice_err_' + Date.now(),
+          sender: 'assistant',
+          text: 'Perangkat atau browser ini belum mendukung input suara web langsung. Silakan gunakan ikon mikrofon bawaan pada keyboard ponsel Anda untuk mendikte dengan suara.',
+          timestamp: Date.now(),
+        },
+      ]);
       return;
     }
 

@@ -23,7 +23,13 @@ export default async function handler(req: any, res: any) {
     }
 
     let body = req.body;
-    if (typeof body === 'string') {
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf-8'));
+      } catch {
+        // Fallback
+      }
+    } else if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
       } catch {

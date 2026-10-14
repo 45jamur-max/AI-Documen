@@ -15,9 +15,17 @@ import {
   MessageSquare,
   Bot,
   MessageCircle,
+  QrCode,
+  Copy,
+  ExternalLink,
+  Languages,
+  Globe,
+  Undo2,
+  Loader2,
 } from 'lucide-react';
 import { ExtractedDocument, TargetFormat, TableData, KeyValueItem, ParagraphItem } from '../types';
 import { generateExcelBlob, generateWordBlob, generatePdfBlob, shareFileOrDownload, downloadBlob } from '../services/exportService';
+import { translateDocumentWithAI } from '../services/geminiService';
 import { DocumentChatSheet } from './DocumentChatSheet';
 
 interface ResultEditorProps {
@@ -38,6 +46,9 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isTranslateOpen, setIsTranslateOpen] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [originalDocBeforeTranslation, setOriginalDocBeforeTranslation] = useState<ExtractedDocument | null>(null);
 
   // Synchronize state whenever a new document is loaded
   useEffect(() => {
@@ -47,6 +58,34 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Translation handler
+  const handleTranslate = async (targetLang: string) => {
+    setIsTranslating(true);
+    setIsTranslateOpen(false);
+    try {
+      if (!originalDocBeforeTranslation) {
+        setOriginalDocBeforeTranslation(doc);
+      }
+      showToast('Sedang menerjemahkan dokumen...');
+      const { translatedDocument, targetLanguageName } = await translateDocumentWithAI(doc, targetLang);
+      setDoc(translatedDocument);
+      showToast(`Dokumen berhasil diterjemahkan ke ${targetLanguageName}`);
+    } catch (err: any) {
+      console.error(err);
+      showToast('Gagal menerjemahkan: ' + (err?.message || 'Error tidak diketahui'));
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleRevertTranslation = () => {
+    if (originalDocBeforeTranslation) {
+      setDoc(originalDocBeforeTranslation);
+      setOriginalDocBeforeTranslation(null);
+      showToast('Berhasil dikembalikan ke teks bahasa asli');
+    }
   };
 
   // Title modification
@@ -162,7 +201,7 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
       showToast(`Mengunduh ${filename} langsung ke perangkat...`);
     } catch (err: any) {
       console.error(err);
-      alert('Gagal membuat file: ' + (err?.message || 'Error tidak diketahui'));
+      showToast('Gagal membuat file: ' + (err?.message || 'Error tidak diketahui'));
     } finally {
       setIsExporting(false);
     }
@@ -182,7 +221,7 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      alert('Gagal membagikan file: ' + (err?.message || 'Error tidak diketahui'));
+      showToast('Gagal membagikan file: ' + (err?.message || 'Error tidak diketahui'));
     } finally {
       setIsExporting(false);
     }
@@ -251,7 +290,37 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {/* Revert Translation Button if translated */}
+            {originalDocBeforeTranslation && (
+              <button
+                type="button"
+                onClick={handleRevertTranslation}
+                className="flex items-center gap-1 text-[11px] font-bold px-2 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 transition active:scale-95"
+                title="Kembalikan ke bahasa dokumen asli"
+              >
+                <Undo2 className="w-3 h-3" />
+                <span>Asli</span>
+              </button>
+            )}
+
+            {/* Translate Button */}
+            <button
+              type="button"
+              disabled={isTranslating}
+              onClick={() => setIsTranslateOpen(true)}
+              className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition active:scale-95 disabled:opacity-50"
+              title="Terjemahkan bahasa dokumen"
+            >
+              {isTranslating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+              ) : (
+                <Languages className="w-3.5 h-3.5 text-blue-500" />
+              )}
+              <span className="hidden sm:inline">Terjemahkan</span>
+            </button>
+
+            {/* Chat AI Button */}
             <button
               type="button"
               onClick={() => setIsChatOpen(true)}
@@ -259,20 +328,16 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
               title="Edit dokumen menggunakan Chat AI"
             >
               <MessageSquare className="w-3.5 h-3.5 text-amber-300" />
-              <span>💬 Edit Lewat Chat AI</span>
+              <span>💬 Edit Chat AI</span>
             </button>
-
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hidden xs:inline">
-              Akurasi: {doc.confidenceScore}%
-            </span>
 
             <button
               onClick={onReset}
-              className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+              className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition"
               title="Konversi gambar lain"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Mulai Ulang</span>
+              <span className="hidden md:inline">Ulang</span>
             </button>
           </div>
         </div>
@@ -365,6 +430,67 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* QR Code & Barcode Detection Card (Non-intrusive & Sleek) */}
+      {doc.qrBarcodes && doc.qrBarcodes.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 rounded-2xl border border-blue-200 dark:border-blue-800/80 p-3.5 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-blue-900 dark:text-blue-300 text-xs font-bold">
+              <QrCode className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>QR Code & Barcode Terdeteksi ({doc.qrBarcodes.length})</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/80 text-blue-700 dark:text-blue-200 font-bold">
+              Otomatis Terbaca
+            </span>
+          </div>
+
+          <div className="space-y-1.5 pt-1">
+            {doc.qrBarcodes.map((item, idx) => {
+              const isUrl = Boolean(item.isUrl || item.rawText?.startsWith('http'));
+              return (
+                <div
+                  key={idx}
+                  className="text-xs p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-blue-200/60 dark:border-blue-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs"
+                >
+                  <div className="flex items-start sm:items-center gap-2 min-w-0">
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 shrink-0 border border-blue-200/50 dark:border-blue-800/50">
+                      {item.label || (item.type === 'barcode' ? 'Barcode 1D' : 'QR Code')}
+                    </span>
+                    <span className="font-mono text-slate-800 dark:text-slate-100 break-all text-[11px] sm:text-xs">
+                      {item.rawText}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(item.rawText);
+                        showToast('Kode berhasil disalin');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition active:scale-95"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Salin</span>
+                    </button>
+                    {isUrl && (
+                      <a
+                        href={item.rawText}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 transition active:scale-95 shadow-xs"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Buka Link</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -643,6 +769,84 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
           showToast('Dokumen berhasil diperbarui oleh Asisten AI');
         }}
       />
+
+      {/* Translation Picker Modal */}
+      {isTranslateOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setIsTranslateOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <Languages className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    Terjemahkan Dokumen
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Angka & harga tetap aman 100%
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTranslateOpen(false)}
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Pilih bahasa target untuk menerjemahkan nama barang, judul, dan isi tabel secara instan:
+            </p>
+
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩', desc: 'Format Baku & Rapi' },
+                { code: 'en', name: 'English (Inggris)', flag: '🇬🇧', desc: 'International Standard' },
+                { code: 'zh', name: 'Mandarin (中文)', flag: '🇨🇳', desc: 'Simplified Chinese' },
+                { code: 'ja', name: 'Japanese (日本語)', flag: '🇯🇵', desc: 'Nihongo Translation' },
+                { code: 'ar', name: 'Arabic (العربية)', flag: '🇸🇦', desc: 'Arabic Translation' },
+              ].map((lang) => (
+                <button
+                  key={lang.code}
+                  type="button"
+                  onClick={() => handleTranslate(lang.code)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/40 flex items-center justify-between transition group text-left active:scale-98"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xl">{lang.flag}</span>
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                        {lang.name}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {lang.desc}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs text-slate-400 group-hover:text-blue-600">→</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsTranslateOpen(false)}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

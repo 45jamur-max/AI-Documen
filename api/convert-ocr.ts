@@ -23,9 +23,15 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Support both pre-parsed body and raw string body on Vercel
+    // Support pre-parsed body, Buffer, and raw string body on Vercel
     let body = req.body;
-    if (typeof body === 'string') {
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf-8'));
+      } catch {
+        // Fallback
+      }
+    } else if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
       } catch {
@@ -95,7 +101,11 @@ Aturan Ketat:
 1. Ekstraksi tabel secara presisi: Kolom ("headers") dan baris ("rows").
 2. Jangan pernah menghilangkan angka nol di depan (misal: "00123" jangan jadi "123").
 3. Format angka atau uang ditulis utuh (misal: "15.000" atau "Rp 15.000").
-4. Kembalikan HANYA format JSON murni tanpa pembuka/penutup markdown dengan struktur berikut:
+4. DETEKSI QR CODE & BARCODE:
+   - Jika pada gambar terdapat QR Code (seperti QR e-Faktur Pajak DJP, QRIS, tautan verifikasi) atau Barcode 1D (nomor resi kurir, barcode produk), baca isinya dan masukkan ke array "qrBarcodes".
+   - Jika tidak ditemukan QR atau Barcode, berikan array kosong [].
+
+5. Kembalikan HANYA format JSON murni tanpa pembuka/penutup markdown dengan struktur berikut:
 {
   "documentTitle": "string",
   "documentType": "table | receipt | document | invoice | mixed",
@@ -132,6 +142,14 @@ Aturan Ketat:
       "location": "string",
       "observedText": "string",
       "issue": "string"
+    }
+  ],
+  "qrBarcodes": [
+    {
+      "type": "qr_code | barcode | e_faktur | resi | other",
+      "rawText": "string",
+      "label": "string",
+      "isUrl": true
     }
   ]
 }

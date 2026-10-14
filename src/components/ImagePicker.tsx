@@ -20,6 +20,8 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [autoEnhance, setAutoEnhance] = useState(true);
 
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
+
   // File size formatter
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -106,6 +108,7 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
 
   const processFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
+    setWarningMessage(null);
 
     const newItems: ImageItem[] = [];
     const maxAllowedSize = 25 * 1024 * 1024; // 25MB max raw file
@@ -115,13 +118,13 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
 
       // Format check
       if (!file.type.startsWith('image/')) {
-        alert(`File "${file.name}" bukan format gambar yang didukung. Silakan gunakan format JPG, PNG, atau WEBP.`);
+        setWarningMessage(`File "${file.name}" bukan format gambar yang didukung. Gunakan JPG, PNG, atau WEBP.`);
         continue;
       }
 
       // Raw size check
       if (file.size > maxAllowedSize) {
-        alert(`Ukuran file "${file.name}" terlalu besar (${formatSize(file.size)}).`);
+        setWarningMessage(`Ukuran file "${file.name}" terlalu besar (${formatSize(file.size)}).`);
         continue;
       }
 
@@ -208,6 +211,22 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
           e.target.value = '';
         }}
       />
+
+      {warningMessage && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <span>{warningMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWarningMessage(null)}
+            className="text-amber-600 hover:text-amber-800 dark:hover:text-amber-100 font-bold px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Main 3 Source Buttons (Camera, Gallery, Files) */}
       <div className="grid grid-cols-3 gap-2.5">
