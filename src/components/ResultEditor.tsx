@@ -14,6 +14,7 @@ import {
   Sparkles,
   MessageSquare,
   Bot,
+  MessageCircle,
 } from 'lucide-react';
 import { ExtractedDocument, TargetFormat, TableData, KeyValueItem, ParagraphItem } from '../types';
 import { generateExcelBlob, generateWordBlob, generatePdfBlob, shareFileOrDownload, downloadBlob } from '../services/exportService';
@@ -185,6 +186,42 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
     } finally {
       setIsExporting(false);
     }
+  };
+
+  // Quick WhatsApp Share with clean receipt format
+  const handleWhatsAppShare = () => {
+    const title = (doc.documentTitle || 'Dokumen Konversi').toUpperCase();
+    const table = doc.tables?.[0];
+    let msg = `*${title}*\n`;
+    msg += `_Tanggal: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}_\n\n`;
+
+    if (doc.keyValues && doc.keyValues.length > 0) {
+      doc.keyValues.slice(0, 4).forEach((kv) => {
+        msg += `• *${kv.key}:* ${kv.value}\n`;
+      });
+      msg += `\n`;
+    }
+
+    if (table && table.rows && table.rows.length > 0) {
+      msg += `*Rincian Barang (${table.rows.length} item):*\n`;
+      table.rows.slice(0, 5).forEach((r, idx) => {
+        const itemDesc = r.slice(1, 4).filter(Boolean).join(' - ');
+        msg += `${idx + 1}. ${itemDesc || r[0]}\n`;
+      });
+      if (table.rows.length > 5) {
+        msg += `... dan ${table.rows.length - 5} item lainnya\n`;
+      }
+    }
+
+    if (table?.total) {
+      msg += `\n*TOTAL: ${table.total}*\n`;
+    }
+
+    msg += `\n_Dihasilkan rapi melalui AI Converter_`;
+
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+    showToast('Membuka WhatsApp...');
   };
 
   return (
@@ -544,13 +581,13 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
 
       {/* PRIMARY ACTION BUTTONS (Touch Target >= 48dp) */}
       <div className="sticky bottom-4 z-30 pt-2 space-y-2">
-        <div className="grid grid-cols-2 gap-2.5 bg-slate-900/90 dark:bg-slate-950/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-700 shadow-2xl">
+        <div className="flex items-center gap-2 bg-slate-900/90 dark:bg-slate-950/90 backdrop-blur-md p-2 rounded-2xl border border-slate-700 shadow-2xl">
           {/* Main Download Button */}
           <button
             type="button"
             disabled={isExporting}
             onClick={() => handleDownload(activeFormat)}
-            className={`min-h-[48px] px-4 rounded-xl font-bold text-xs sm:text-sm text-white flex items-center justify-center gap-2 shadow-lg transition active:scale-95 disabled:opacity-50 ${
+            className={`flex-1 min-h-[48px] px-3.5 rounded-xl font-bold text-xs sm:text-sm text-white flex items-center justify-center gap-1.5 shadow-lg transition active:scale-95 disabled:opacity-50 ${
               activeFormat === 'excel'
                 ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/40'
                 : activeFormat === 'word'
@@ -558,14 +595,14 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
                 : 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/40'
             }`}
           >
-            <Download className="w-4 h-4" />
-            <span>
+            <Download className="w-4 h-4 shrink-0" />
+            <span className="truncate">
               {isExporting
                 ? 'Menyusun File...'
                 : activeFormat === 'excel'
-                ? 'Unduh Excel (.xlsx)'
+                ? 'Unduh Excel'
                 : activeFormat === 'word'
-                ? 'Unduh Word (.docx)'
+                ? 'Unduh Word'
                 : 'Unduh PDF'}
             </span>
           </button>
@@ -575,10 +612,23 @@ export const ResultEditor: React.FC<ResultEditorProps> = ({
             type="button"
             disabled={isExporting}
             onClick={handleShare}
-            className="min-h-[48px] px-4 rounded-xl font-bold text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
+            className="min-h-[48px] px-3.5 rounded-xl font-bold text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 shrink-0"
+            title="Bagikan berkas lewat menu Android"
           >
             <Share2 className="w-4 h-4" />
-            <span>Bagikan File</span>
+            <span className="hidden xs:inline">Bagikan</span>
+          </button>
+
+          {/* Quick WhatsApp Share Button */}
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={handleWhatsAppShare}
+            className="min-h-[48px] px-3.5 rounded-xl font-bold text-xs sm:text-sm bg-[#25D366] hover:bg-[#1EBE5D] text-white shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 shrink-0"
+            title="Kirim ringkasan nota ke WhatsApp"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span className="hidden xs:inline">WhatsApp</span>
           </button>
         </div>
       </div>

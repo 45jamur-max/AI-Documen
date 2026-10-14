@@ -11,6 +11,8 @@ import {
   Bot,
   User,
   ChevronDown,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { ExtractedDocument } from '../types';
 import { ChatMessage, modifyDocumentWithChat } from '../services/geminiService';
@@ -38,8 +40,64 @@ export const DocumentChatSheet: React.FC<DocumentChatSheetProps> = ({
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [previousDocHistory, setPreviousDocHistory] = useState<ExtractedDocument[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize SpeechRecognition for Indonesian voice commands
+  useEffect(() => {
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRec) {
+      try {
+        const recognition = new SpeechRec();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'id-ID';
+
+        recognition.onresult = (event: any) => {
+          const transcript = Array.from(event.results)
+            .map((result: any) => result[0]?.transcript)
+            .join('');
+          if (transcript) {
+            setInputText(transcript);
+          }
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      } catch (e) {
+        console.warn('SpeechRecognition initialization warning:', e);
+      }
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert('Perangkat / browser ini belum mendukung input suara web. Silakan gunakan keyboard suara bawaan ponsel Anda.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.warn('Recognition start error:', err);
+      }
+    }
+  };
 
   // Quick suggestions
   const quickSuggestions = [
@@ -308,9 +366,27 @@ export const DocumentChatSheet: React.FC<DocumentChatSheetProps> = ({
               value={inputText}
               disabled={isLoading}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ketik instruksi (cth: ubah diskon jadi 10%)..."
-              className="flex-1 min-h-[46px] px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={isListening ? 'Mendengarkan suara Anda...' : 'Ketik instruksi atau gunakan suara...'}
+              className={`flex-1 min-h-[46px] px-3.5 py-2.5 text-xs sm:text-sm rounded-xl bg-slate-50 dark:bg-slate-800 border text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 transition ${
+                isListening
+                  ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-400/50 bg-rose-50/20'
+                  : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+              }`}
             />
+            {/* Voice Input Mic Button */}
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={isLoading}
+              className={`min-h-[46px] w-[46px] rounded-xl font-bold flex items-center justify-center transition active:scale-95 shrink-0 ${
+                isListening
+                  ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/30 ring-2 ring-rose-400'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+              }`}
+              title={isListening ? 'Sedang mendengarkan... Klik untuk berhenti' : 'Bicara lewat suara (Voice Input)'}
+            >
+              {isListening ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-slate-600 dark:text-slate-300" />}
+            </button>
             <button
               type="submit"
               disabled={!inputText.trim() || isLoading}

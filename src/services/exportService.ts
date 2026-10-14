@@ -17,6 +17,33 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ExtractedDocument, PdfOptions } from '../types';
 
+// ==================== HELPER TERBILANG RUPIAH INDONESIA ====================
+export function angkaKeTerbilang(nilai: number): string {
+  const bilangan = Math.abs(Math.floor(nilai));
+  if (isNaN(bilangan) || bilangan === 0) return 'Nol Rupiah';
+
+  const kata = [
+    '', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima',
+    'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'
+  ];
+
+  function konversi(n: number): string {
+    if (n < 12) return kata[n];
+    if (n < 20) return konversi(n - 10) + ' Belas';
+    if (n < 100) return konversi(Math.floor(n / 10)) + ' Puluh ' + konversi(n % 10);
+    if (n < 200) return 'Seratus ' + konversi(n - 100);
+    if (n < 1000) return konversi(Math.floor(n / 100)) + ' Ratus ' + konversi(n % 100);
+    if (n < 2000) return 'Seribu ' + konversi(n - 1000);
+    if (n < 1000000) return konversi(Math.floor(n / 1000)) + ' Ribu ' + konversi(n % 1000);
+    if (n < 1000000000) return konversi(Math.floor(n / 1000000)) + ' Juta ' + konversi(n % 1000000);
+    if (n < 1000000000000) return konversi(Math.floor(n / 1000000000)) + ' Miliar ' + konversi(n % 1000000000);
+    return konversi(Math.floor(n / 1000000000000)) + ' Triliun ' + konversi(n % 1000000000000);
+  }
+
+  const hasil = konversi(bilangan).replace(/\s+/g, ' ').trim();
+  return `${hasil} Rupiah`;
+}
+
 // ==================== EXCEL (.XLSX) EXPORT - 1 SHEET SAJA & SIAP PRINT ====================
 export function generateExcelBlob(doc: ExtractedDocument): Blob {
   const wb = XLSX.utils.book_new();
@@ -119,12 +146,23 @@ export function generateExcelBlob(doc: ExtractedDocument): Blob {
         const totRow = new Array(Math.max(headers.length, 2)).fill('');
         totRow[headers.length - 2] = 'TOTAL';
         const totClean = String(table.total).trim().replace(/\./g, '').replace(/,/g, '.');
+        let parsedTotal: number | null = null;
         if (/^-?\d+(\.\d+)?$/.test(totClean)) {
-          totRow[headers.length - 1] = parseFloat(totClean);
+          parsedTotal = parseFloat(totClean);
+          totRow[headers.length - 1] = parsedTotal;
         } else {
           totRow[headers.length - 1] = table.total;
         }
         allRows.push(totRow);
+
+        // Tambahkan baris Terbilang resmi otomatis jika total berupa angka
+        if (parsedTotal && parsedTotal > 0) {
+          const terbilangStr = angkaKeTerbilang(parsedTotal);
+          const terbilangRow = new Array(Math.max(headers.length, 2)).fill('');
+          terbilangRow[0] = 'TERBILANG:';
+          terbilangRow[1] = `# ${terbilangStr} #`;
+          allRows.push(terbilangRow);
+        }
       }
 
       allRows.push([]); // Baris kosong pemisah antar tabel

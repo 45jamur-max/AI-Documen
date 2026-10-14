@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Camera, Image as ImageIcon, FolderOpen, Trash2, ArrowUp, ArrowDown, Plus, Eye, AlertCircle } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Camera, Image as ImageIcon, FolderOpen, Trash2, ArrowUp, ArrowDown, Plus, Eye, AlertCircle, Sparkles } from 'lucide-react';
 import { ImageItem } from '../types';
 
 interface ImagePickerProps {
@@ -18,6 +18,7 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [autoEnhance, setAutoEnhance] = useState(true);
 
   // File size formatter
   const formatSize = (bytes: number): string => {
@@ -64,6 +65,25 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
           }
 
           ctx.drawImage(img, 0, 0, width, height);
+
+          // Contrast enhancement for faded ink/thermal paper if enabled
+          if (autoEnhance) {
+            try {
+              const imgData = ctx.getImageData(0, 0, width, height);
+              const d = imgData.data;
+              const contrast = 18;
+              const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+              for (let i = 0; i < d.length; i += 4) {
+                d[i] = factor * (d[i] - 128) + 128;
+                d[i + 1] = factor * (d[i + 1] - 128) + 128;
+                d[i + 2] = factor * (d[i + 2] - 128) + 128;
+              }
+              ctx.putImageData(imgData, 0, 0);
+            } catch {
+              // Canvas security fallback
+            }
+          }
+
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
           const approxSize = Math.round((compressedDataUrl.length * 3) / 4);
           resolve({ dataUrl: compressedDataUrl, size: approxSize });
@@ -223,6 +243,25 @@ export const ImagePicker: React.FC<ImagePickerProps> = ({
           </div>
           <span className="text-xs font-semibold">Pilih File</span>
         </button>
+      </div>
+
+      {/* Auto Contrast / Document Sharpener Toggle (Compact 1-liner) */}
+      <div className="flex items-center justify-between px-1 py-0.5">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+          <input
+            type="checkbox"
+            checked={autoEnhance}
+            onChange={(e) => setAutoEnhance(e.target.checked)}
+            className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+          />
+          <span className="flex items-center gap-1.5 font-medium text-[11px]">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span>Pertajam Tulisan & Kontras Otomatis (Anti-Pudar)</span>
+          </span>
+        </label>
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">
+          Bagus untuk struk tipis
+        </span>
       </div>
 
       {/* Selected Images Preview Container */}
